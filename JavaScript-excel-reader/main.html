@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Excel to SharePoint</title>
+</head>
+<body>
+  <input type="file" id="excelFileInput">
+  <button onclick="uploadToSharePoint()">Upload to SharePoint</button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.16.9/xlsx.full.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script>
+    function uploadToSharePoint() {
+      var fileInput = document.getElementById('excelFileInput');
+      var file = fileInput.files[0];
+
+      if (file) {
+        var reader = new FileReader();
+
+        reader.onload = function(e) {
+          var data = new Uint8Array(e.target.result);
+          var workbook = XLSX.read(data, { type: 'array' });
+          var sheetName = workbook.SheetNames[0];
+          var sheet = workbook.Sheets[sheetName];
+          var jsonData = XLSX.utils.sheet_to_json(sheet);
+
+          addDataToSharePoint(jsonData);
+        };
+
+        reader.readAsArrayBuffer(file);
+      } else {
+        alert('Please select a file.');
+      }
+    }
+
+    function addDataToSharePoint(data) {
+      var siteUrl = "https://your-sharepoint-site-url";
+      var listName = "YourListName";
+
+      data.forEach(function(item) {
+        // Check for duplicates
+        checkForDuplicates(item).then(function(exists) {
+          if (!exists) {
+            var listItem = {
+              __metadata: { type: "SP.Data." + listName + "ListItem" }
+            };
+
+            for (var key in item) {
+              if (item.hasOwnProperty(key)) {
+                listItem[key] = item[key];
+              }
+            }
+
+            var url = siteUrl + "/_api/web/lists/getbytitle('" + listName + "')/items";
+            var headers = {
+              "Accept": "application/json;odata=verbose",
+              "Content-Type": "application/json;odata=verbose",
+              "X-RequestDigest": $("#__REQUESTDIGEST").val()
+            };
+
+            $.ajax({
+              url: url,
+              type: "POST",
+              data: JSON.stringify(listItem),
+              headers: headers,
+              success: function(data) {
+                console.log("Item added successfully.");
+              },
+              error: function(error) {
+                console.error("Error adding item: " + JSON.stringify(error));
+              }
+            });
+          } else {
+            console.log("Duplicate item found and skipped.");
+          }
+        });
+      });
+    }
+
+    function checkForDuplicates(item) {
+      return new Promise(function(resolve, reject) {
+        var siteUrl = "https://your-sharepoint-site-url";
+        var listName = "YourListName";
+
+        var queryUrl = siteUrl + "/_api/web/lists/getbytitle('" + listName + "')/items";
+        queryUrl += "?$filter=";
+
+        for (var key in item) {
+          if (item.hasOwnProperty(key)) {
+            queryUrl += key + " eq '" + item[key] + "' and ";
+          }
+        }
+
+        // Remove the last " and " from the filter
+        queryUrl = queryUrl.slice(0, -5);
+
+        $.ajax({
+          url: queryUrl,
+          type: "GET",
+          headers: {
+            "Accept": "application/json;odata=verbose"
+          },
+          success: function(data) {
+            resolve(data.d.results.length > 0);
+          },
+          error: function(error) {
+            console.error("Error checking for duplicates: " + JSON.stringify(error));
+            resolve(false);
+          }
+        });
+      });
+    }
+  </script>
+</body>
+</html>
